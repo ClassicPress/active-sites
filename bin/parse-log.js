@@ -6,6 +6,7 @@ const path        = require( 'path' );
 const querystring = require( 'querystring' );
 const util        = require( 'util' );
 
+const math   = require( 'mathjs' );
 const split2 = require( 'split2' );
 
 const logFilename = process.argv[ 2 ];
@@ -58,7 +59,7 @@ function reportProgress( record ) {
 			const numIpsNoID   = Object.keys( ipsNoID ).length;
 			const numSitesNoID = Math.round( numSites / numIps * numIpsNoID );
 			console.log(
-				'%s: %d sites (%d with ID, %d without); %d IPs (%d with ID, %d without)',
+				'%s: ~%d sites (%d with ID, ~%d without); %d IPs (%d with ID, %d without)',
 				lastTime.substring( 0, 10 ),
 				numSites + numSitesNoID,
 				numSites,
@@ -107,7 +108,10 @@ fs.createReadStream( logFilename )
 			apiRecords++;
 			const ip = record.remote_host;
 			if ( siteID ) {
-				sites[ siteID ] = ( sites[ siteID ] || 0 ) + 1;
+				if ( ! sites[ siteID ] ) {
+					sites[ siteID ] = [];
+				}
+				sites[ siteID ].push( Date.parse( record.time ) );
 				ips[ ip ] = ( ips[ ip ] || 0 ) + 1;
 			} else {
 				ipsNoID[ ip ] = ( ipsNoID[ ip ] || 0 ) + 1;
@@ -119,4 +123,22 @@ fs.createReadStream( logFilename )
 	} )
 	.on( 'end', () => {
 		reportProgress();
+
+		let means = [];
+		Object.keys( sites ).forEach( siteID => {
+			const updateTimes = sites[ siteID ];
+			// Calculate differences between updates (in hours); exclude
+			// probable manual checks
+			const updateDifferences = updateTimes.slice( 1 ).map( ( b, i ) => {
+				return ( b - updateTimes[ i ] ) / 1000 / 3600;
+			} ).filter( d => d >= 4 );
+			if ( ! updateDifferences.length ) {
+				return;
+			}
+			means.push( math.mean( updateDifferences ) );
+		} );
+		console.log( {
+			totalMean: math.mean( means ),
+			totalStdev: math.std( means ),
+		} );
 	} );
