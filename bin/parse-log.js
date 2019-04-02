@@ -80,6 +80,17 @@ function reportProgress( record ) {
 	}
 }
 
+const dateCache = {};
+function addDaysToDate( date, days ) {
+	const key = date.substring( 0, 10 ) + '|' + days;
+	if ( ! dateCache[ key ] ) {
+		dateCache[ key ] = moment.utc( date.substring( 0, 10 ) )
+			.add( days, 'days' )
+			.format( 'YYYY-MM-DD' );
+	}
+	return dateCache[ key ];
+}
+
 fs.createReadStream( logFilename )
 	.pipe( split2() )
 	.on( 'data', line => {
@@ -123,9 +134,7 @@ fs.createReadStream( logFilename )
 				siteID += '|' + ip;
 			}
 			for ( let i = -daysValidityBefore; i <= daysValidityAfter; i++ ) {
-				const d = moment( record.time )
-					.add( i, 'days' )
-					.format( 'YYYY-MM-DD' );
+				const d = addDaysToDate( record.time, i );
 				sites[ d ]   = sites[ d ]   || {};
 				ips[ d ]     = ips[ d ]     || {};
 				ipsNoID[ d ] = ipsNoID[ d ] || {};
