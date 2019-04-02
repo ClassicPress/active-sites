@@ -26,7 +26,8 @@ if ( ! fs.existsSync( logFilename ) ) {
 
 // Count a site as active for this many days before and after an update check.
 // Without this, we will miss active sites that don't get much traffic.
-const updateCheckValidityDays = 6;
+const daysValidityBefore = 6;
+const daysValidityAfter  = 6;
 
 const sites = {};
 const ips = {};
@@ -49,7 +50,7 @@ function reportProgress( record ) {
 	}
 
 	const maxDate = moment( record ? record.time : lastTime )
-		.subtract( updateCheckValidityDays + 1, 'days' )
+		.subtract( daysValidityBefore + 1, 'days' )
 		.format( 'YYYY-MM-DD' );
 
 	let n = 0;
@@ -121,7 +122,7 @@ fs.createReadStream( logFilename )
 			if ( siteID ) {
 				siteID += '|' + ip;
 			}
-			for ( let i = -updateCheckValidityDays; i <= updateCheckValidityDays; i++ ) {
+			for ( let i = -daysValidityBefore; i <= daysValidityAfter; i++ ) {
 				const d = moment( record.time )
 					.add( i, 'days' )
 					.format( 'YYYY-MM-DD' );
