@@ -118,6 +118,9 @@ fs.createReadStream( logFilename )
 			}
 			apiRecords++;
 			const ip = record.remote_host;
+			if ( siteID ) {
+				siteID += '|' + ip;
+			}
 			for ( let i = -updateCheckValidityDays; i <= updateCheckValidityDays; i++ ) {
 				const d = moment( record.time )
 					.add( i, 'days' )
