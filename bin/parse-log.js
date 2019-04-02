@@ -59,10 +59,19 @@ function reportProgress( record ) {
 			return;
 		}
 		n++;
+		const numSites     = Object.keys( sites[ date ] ).length;
+		const numIps       = Object.keys( ips[ date ] ).length;
+		const numIpsNoID   = Object.keys( ipsNoID[ date ] ).length;
+		const numSitesNoID = Math.round( numSites / numIps * numIpsNoID );
 		console.log(
-			'%s: %d sites',
+			'%s: ~%d sites (%d with ID, ~%d without); %d IPs (%d with ID, %d without)',
 			date,
-			Object.keys( sites[ date ] ).length,
+			numSites + numSitesNoID,
+			numSites,
+			numSitesNoID,
+			numIps + numIpsNoID,
+			numIps,
+			numIpsNoID,
 		);
 	} );
 	for ( ; n <= 24; n++ ) {
