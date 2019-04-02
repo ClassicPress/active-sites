@@ -6,7 +6,7 @@ const path        = require( 'path' );
 const querystring = require( 'querystring' );
 const util        = require( 'util' );
 
-const math   = require( 'mathjs' );
+const moment = require( 'moment' );
 const split2 = require( 'split2' );
 
 const logFilename = process.argv[ 2 ];
@@ -24,6 +24,10 @@ if ( ! fs.existsSync( logFilename ) ) {
 	) );
 }
 
+// Count a site as active for this many days before and after an update check.
+// Without this, we will miss active sites that don't get much traffic.
+const updateCheckValidityDays = 6;
+
 const sites = {};
 const ips = {};
 const ipsNoID = {};
@@ -31,44 +35,38 @@ let lastTime = null;
 let records = 0;
 let apiRecords = 0;
 let failedRecords = 0;
+let minDate = null;
 
 function reportProgress( record ) {
-	if ( lastTime ) {
-		if (
-			record &&
-			Date.parse( lastTime ) - 60000 > Date.parse( record.time )
-		) {
-			throw new Error( util.format(
-				'Log entries are not sorted in ascending order! (%s, %s)',
-				lastTime, record.time
-			) );
+	if ( ! lastTime ) {
+		return;
+	}
+	if (
+		record &&
+		lastTime.substring( 0, 10 ) === record.time.substring( 0, 10 )
+	) {
+		return;
+	}
+
+	const maxDate = moment( record ? record.time : lastTime )
+		.subtract( updateCheckValidityDays + 1, 'days' )
+		.format( 'YYYY-MM-DD' );
+
+	let n = 0;
+	console.log( '---' );
+	Object.keys( sites ).forEach( date => {
+		if ( date < minDate || date > maxDate ) {
+			return;
 		}
-		if (
-			! record ||
-			lastTime.substring( 0, 10 ) !== record.time.substring( 0, 10 )
-		) {
-			console.log(
-				'%s: %d records; %d API records; %d failed parsing',
-				lastTime.substring( 0, 10 ),
-				records,
-				apiRecords,
-				failedRecords,
-			);
-			const numSites     = Object.keys( sites ).length;
-			const numIps       = Object.keys( ips ).length;
-			const numIpsNoID   = Object.keys( ipsNoID ).length;
-			const numSitesNoID = Math.round( numSites / numIps * numIpsNoID );
-			console.log(
-				'%s: ~%d sites (%d with ID, ~%d without); %d IPs (%d with ID, %d without)',
-				lastTime.substring( 0, 10 ),
-				numSites + numSitesNoID,
-				numSites,
-				numSitesNoID,
-				numIps + numIpsNoID,
-				numIps,
-				numIpsNoID,
-			);
-		}
+		n++;
+		console.log(
+			'%s: %d sites',
+			date,
+			Object.keys( sites[ date ] ).length,
+		);
+	} );
+	for ( ; n <= 24; n++ ) {
+		console.log();
 	}
 }
 
@@ -80,6 +78,10 @@ fs.createReadStream( logFilename )
 
 		const match = record.url.match( /\/upgrade\/[^\/]+\.json\?(.*$)/ );
 		if ( match ) {
+			const date = record.time.substring( 0, 10 );
+			if ( ! minDate ) {
+				minDate = date;
+			}
 			const qs = querystring.parse( match[ 1 ] );
 			const cpVersionBase = qs.version.replace( /\+.*$/, '' );
 			let siteID = null;
@@ -107,38 +109,31 @@ fs.createReadStream( logFilename )
 			}
 			apiRecords++;
 			const ip = record.remote_host;
-			if ( siteID ) {
-				if ( ! sites[ siteID ] ) {
-					sites[ siteID ] = [];
+			for ( let i = -updateCheckValidityDays; i <= updateCheckValidityDays; i++ ) {
+				const d = moment( record.time )
+					.add( i, 'days' )
+					.format( 'YYYY-MM-DD' );
+				sites[ d ]   = sites[ d ]   || {};
+				ips[ d ]     = ips[ d ]     || {};
+				ipsNoID[ d ] = ipsNoID[ d ] || {};
+				if ( siteID ) {
+					sites[ d ][ siteID ] = true;
+					ips[ d ][ ip ] = true;
+				} else {
+					ipsNoID[ d ][ ip ] = true;
 				}
-				sites[ siteID ].push( Date.parse( record.time ) );
-				ips[ ip ] = ( ips[ ip ] || 0 ) + 1;
-			} else {
-				ipsNoID[ ip ] = ( ipsNoID[ ip ] || 0 ) + 1;
 			}
 		}
 
+		if ( Date.parse( lastTime ) - 60000 > Date.parse( record.time ) ) {
+			throw new Error( util.format(
+				'Log entries are not sorted in ascending order! (%s, %s)',
+				lastTime, record.time
+			) );
+		}
 		reportProgress( record );
 		lastTime = record.time;
 	} )
 	.on( 'end', () => {
 		reportProgress();
-
-		let means = [];
-		Object.keys( sites ).forEach( siteID => {
-			const updateTimes = sites[ siteID ];
-			// Calculate differences between updates (in hours); exclude
-			// probable manual checks
-			const updateDifferences = updateTimes.slice( 1 ).map( ( b, i ) => {
-				return ( b - updateTimes[ i ] ) / 1000 / 3600;
-			} ).filter( d => d >= 4 );
-			if ( ! updateDifferences.length ) {
-				return;
-			}
-			means.push( math.mean( updateDifferences ) );
-		} );
-		console.log( {
-			totalMean: math.mean( means ),
-			totalStdev: math.std( means ),
-		} );
 	} );
